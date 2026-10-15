@@ -1,1 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPX 路線運動軌跡、海拔剖面與時間紀錄表</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+            background-color: #f7f9fa;
+            color: #2d3748;
+        }
+        .container {
+            max-width: 1040px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 28px;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+        }
+        h2 {
+            margin-top: 28px;
+            margin-bottom: 14px;
+            font-size: 1.25rem;
+            color: #1a202c;
+            border-left: 4px solid #3182ce;
+            padding-left: 10px;
+        }
+        h2:first-of-type {
+            margin-top: 0;
+        }
+        #map {
+            width: 100%;
+            height: 420px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            z-index: 1;
+        }
+        #chart-container {
+            width: 100%;
+            height: 320px;
+            margin-bottom: 24px;
+        }
+        .table-responsive {
+            overflow-x: auto;
+            margin-top: 12px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+            text-align: left;
+        }
+        thead {
+            background-color: #edf2f7;
+            color: #4a5568;
+        }
+        th, td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        tbody tr:hover {
+            background-color: #f8fafc;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .badge-start { background-color: #c6f6d5; color: #22543d; }
+        .badge-end { background-color: #fed7d7; color: #742a2a; }
+        .badge-point { background-color: #e2e8f0; color: #4a5568; }
+    </style>
+</head>
+<body>
 
+<div class="container">
+    <h2>路線運動軌跡圖 (台灣通用電子地圖)</h2>
+    <div id="map"></div>
+
+    <h2>海拔高度變化的剖面圖</h2>
+    <div id="chart-container">
+        <canvas id="elevationChart"></canvas>
+    </div>
+
+    <h2>主要節點時間紀錄表</h2>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>節點類型</th>
+                    <th>名稱</th>
+                    <th>記錄時間 (UTC+8)</th>
+                    <th>海拔高度</th>
+                    <th>經緯度座標</th>
+                </tr>
+            </thead>
+            <tbody id="waypoints-table-body">
+                <!-- 由 JavaScript 自動解析生成表格內容 -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const fullGpxString = `<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1">
+<wpt lat="24.7627871" lon="121.3412168"><ele>645.34</ele><time>2025-11-21T23:31:45.206Z</time><name><![CDATA[起點站]]></name><type>起點</type></wpt>
+<wpt lat="24.7623976" lon="121.3396440"><ele>565.18</ele><time>2025-11-22T01:45:20.450Z</time><name><![CDATA[A]]></name><type>方位點</type></wpt>
+<wpt lat="24.7607053" lon="121.3389674"><ele>681.62</ele><time>2025-11-22T03:38:34.659Z</time><name><![CDATA[A3]]></name><type>方位點</type></wpt>
+<wpt lat="24.7604229" lon="121.3367084"><ele>765.22</ele><time>2025-11-22T05:04:03.350Z</time><name><![CDATA[B]]></name><type>方位點</type></wpt>
+<wpt lat="24.7585079" lon="121.3356780"><ele>837.04</ele><time>2025-11-22T07:27:18.146Z</time><name><![CDATA[c]]></name><type>方位點</type></wpt>
+<wpt lat="24.7581539" lon="121.3351306"><ele>829.89</ele><time>2025-11-22T10:46:05.355Z</time><name><![CDATA[第一段終點]]></name><type>終點</type></wpt>
+<wpt lat="24.7629164" lon="121.3412982"><ele>652.52</ele><time>2025-11-23T08:23:09.075Z</time><name><![CDATA[最終折返終點]]></name><type>終點</type></wpt>
+<trk>
+<trkseg>
+<trkpt lat="24.7627871" lon="121.3412168"><ele>645.34</ele></trkpt>
+<trkpt lat="24.7626055" lon="121.3412258"><ele>643.21</ele></trkpt>
+<trkpt lat="24.7624363" lon="121.3411455"><ele>640.71</ele></trkpt>
+<trkpt lat="24.7622692" lon="121.3410712"><ele>632.60</ele></trkpt>
+<trkpt lat="24.7621168" lon="121.3409616"><ele>623.76</ele></trkpt>
+<trkpt lat="24.7619626" lon="121.3408594"><ele>606.64</ele></trkpt>
+<trkpt lat="24.7618548" lon="121.3406995"><ele>593.46</ele></trkpt>
+<trkpt lat="24.7617770" lon="121.3405206"><ele>581.74</ele></trkpt>
+<trkpt lat="24.7619369" lon="121.3404210"><ele>578.02</ele></trkpt>
+<trkpt lat="24.7620445" lon="121.3402577"><ele>580.13</ele></trkpt>
+<trkpt lat="24.7621320" lon="121.3400845"><ele>579.77</ele></trkpt>
+<trkpt lat="24.7622255" lon="121.3399151"><ele>566.29</ele></trkpt>
+<trkpt lat="24.7620630" lon="121.3398237"><ele>558.37</ele></trkpt>
+<trkpt lat="24.7622422" lon="121.3398031"><ele>566.25</ele></trkpt>
+<trkpt lat="24.7623724" lon="121.3396641"><ele>563.08</ele></trkpt>
+<trkpt lat="24.7625097" lon="121.3395320"><ele>559.84</ele></trkpt>
+<trkpt lat="24.7625315" lon="121.3393350"><ele>566.83</ele></trkpt>
+<trkpt lat="24.7623528" lon="121.3393088"><ele>587.67</ele></trkpt>
+<trkpt lat="24.7622405" lon="121.3391531"><ele>601.65</ele></trkpt>
+<trkpt lat="24.7620955" lon="121.3390346"><ele>611.86</ele></trkpt>
+<trkpt lat="24.7619754" lon="121.3388849"><ele>619.78</ele></trkpt>
+<trkpt lat="24.7617963" lon="121.3388564"><ele>634.69</ele></trkpt>
+<trkpt lat="24.7616268" lon="121.3387895"><ele>641.14</ele></trkpt>
+<trkpt lat="24.7614465" lon="121.3387182"><ele>648.71</ele></trkpt>
+<trkpt lat="24.7612658" lon="121.3386854"><ele>651.06</ele></trkpt>
+<trkpt lat="24.7611156" lon="121.3387959"><ele>656.85</ele></trkpt>
+<trkpt lat="24.7609943" lon="121.3389490"><ele>656.40</ele></trkpt>
+<trkpt lat="24.7608144" lon="121.3389846"><ele>670.39</ele></trkpt>
+<trkpt lat="24.7606361" lon="121.3389486"><ele>694.23</ele></trkpt>
+<trkpt lat="24.7605788" lon="121.3387479"><ele>703.47</ele></trkpt>
+<trkpt lat="24.7605284" lon="121.3385569"><ele>703.78</ele></trkpt>
+<trkpt lat="24.7605668" lon="121.3383630"><ele>710.86</ele></trkpt>
+<trkpt lat="24.7605511" lon="121.3381596"><ele>713.42</ele></trkpt>
+<trkpt lat="24.7606516" lon="121.3379822"><ele>712.58</ele></trkpt>
+<trkpt lat="24.7606882" lon="121.3377881"><ele>715.40</ele></trkpt>
+<trkpt lat="24.7607541" lon="121.3376038"><ele>722.08</ele></trkpt>
+<trkpt lat="24.7607469" lon="121.3374042"><ele>734.20</ele></trkpt>
+<trkpt lat="24.7607490" lon="121.3372061"><ele>740.50</ele></trkpt>
+<trkpt lat="24.7606956" lon="121.3370139"><ele>750.30</ele></trkpt>
+<trkpt lat="24.7605850" lon="121.3368556"><ele>756.02</ele></trkpt>
+<trkpt lat="24.7604602" lon="121.3367127"><ele>762.87</ele></trkpt>
+<trkpt lat="24.7602804" lon="121.3367274"><ele>769.40</ele></trkpt>
+<trkpt lat="24.7601033" lon="121.3366889"><ele>771.96</ele></trkpt>
+<trkpt lat="24.7599237" lon="121.3366745"><ele>783.25</ele></trkpt>
+<trkpt lat="24.7597459" lon="121.3366430"><ele>787.48</ele></trkpt>
+<trkpt lat="24.7595657" lon="121.3366587"><ele>793.28</ele></trkpt>
+<trkpt lat="24.7594819" lon="121.3364792"><ele>792.76</ele></trkpt>
+<trkpt lat="24.7594138" lon="121.3362944"><ele>801.89</ele></trkpt>
+<trkpt lat="24.7592328" lon="121.3362714"><ele>805.81</ele></trkpt>
+<trkpt lat="24.7590537" lon="121.3362457"><ele>816.16</ele></trkpt>
+<trkpt lat="24.7588734" lon="121.3362395"><ele>823.62</ele></trkpt>
+<trkpt lat="24.7587452" lon="121.3360728"><ele>831.59</ele></trkpt>
+<trkpt lat="24.7587161" lon="121.3358773"><ele>833.30</ele></trkpt>
+<trkpt lat="24.7586892" lon="121.3356767"><ele>833.58</ele></trkpt>
+<trkpt lat="24.7585087" lon="121.3356750"><ele>838.67</ele></trkpt>
+<trkpt lat="24.7585747" lon="121.3354833"><ele>835.76</ele></trkpt>
+<trkpt lat="24.7586751" lon="121.3353175"><ele>833.66</ele></trkpt>
+<trkpt lat="24.7585255" lon="121.3352073"><ele>830.04</ele></trkpt>
+<trkpt lat="24.7583319" lon="121.3351624"><ele>827.12</ele></trkpt>
+<trkpt lat="24.7581539" lon="121.3351306"><ele>829.89</ele></trkpt>
+<trkpt lat="24.7578657" lon="121.3354045"><ele>845.82</ele></trkpt>
+<trkpt lat="24.7579981" lon="121.3355396"><ele>846.90</ele></trkpt>
+<trkpt lat="24.7581761" lon="121.3355807"><ele>846.25</ele></trkpt>
+<trkpt lat="24.7583455" lon="121.3356725"><ele>837.42</ele></trkpt>
+<trkpt lat="24.7582611" lon="121.3358485"><ele>853.94</ele></trkpt>
+<trkpt lat="24.7580776" lon="121.3358388"><ele>854.42</ele></trkpt>
+<trkpt lat="24.7578991" lon="121.3358922"><ele>862.75</ele></trkpt>
+<trkpt lat="24.7577269" lon="121.3358100"><ele>858.76</ele></trkpt>
+<trkpt lat="24.7575560" lon="121.3357369"><ele>858.90</ele></trkpt>
+<trkpt lat="24.7573775" lon="121.3357048"><ele>859.05</ele></trkpt>
+<trkpt lat="24.7575579" lon="121.3357139"><ele>855.36</ele></trkpt>
+<trkpt lat="24.7576064" lon="121.3355228"><ele>856.53</ele></trkpt>
+<trkpt lat="24.7574367" lon="121.3355884"><ele>843.09</ele></trkpt>
+<trkpt lat="24.7572861" lon="121.3354770"><ele>844.68</ele></trkpt>
+<trkpt lat="24.7571398" lon="121.3353581"><ele>847.59</ele></trkpt>
+<trkpt lat="24.7570184" lon="121.3352061"><ele>845.75</ele></trkpt>
+<trkpt lat="24.7568897" lon="121.3350676"><ele>846.08</ele></trkpt>
+<trkpt lat="24.7567228" lon="121.3349912"><ele>846.84</ele></trkpt>
+<trkpt lat="24.7565501" lon="121.3349069"><ele>857.31</ele></trkpt>
+<trkpt lat="24.7564003" lon="121.3347799"><ele>855.58</ele></trkpt>
+<trkpt lat="24.7562462" lon="121.3348835"><ele>859.69</ele></trkpt>
+<trkpt lat="24.7562894" lon="121.3346895"><ele>854.77</ele></trkpt>
+<trkpt lat="24.7564058" lon="121.3343468"><ele>866.93</ele></trkpt>
+<trkpt lat="24.7563177" lon="121.3345308"><ele>866.58</ele></trkpt>
+<trkpt lat="24.7562645" lon="121.3347257"><ele>861.38</ele></trkpt>
+<trkpt lat="24.7564442" lon="121.3347785"><ele>854.47</ele></trkpt>
+<trkpt lat="24.7566217" lon="121.3348347"><ele>851.01</ele></trkpt>
+<trkpt lat="24.7567828" lon="121.3349322"><ele>845.97</ele></trkpt>
+<trkpt lat="24.7569293" lon="121.3350494"><ele>842.87</ele></trkpt>
+<trkpt lat="24.7570858" lon="121.3351487"><ele>842.73</ele></trkpt>
+<trkpt lat="24.7572600" lon="121.3352068"><ele>841.87</ele></trkpt>
+<trkpt lat="24.7574368" lon="121.3352481"><ele>841.50</ele></trkpt>
+<trkpt lat="24.7576222" lon="121.3352459"><ele>838.40</ele></trkpt>
+<trkpt lat="24.7578029" lon="121.3352839"><ele>837.74</ele></trkpt>
+<trkpt lat="24.7579787" lon="121.3353366"><ele>840.90</ele></trkpt>
+<trkpt lat="24.7580917" lon="121.3354919"><ele>842.22</ele></trkpt>
+<trkpt lat="24.7582578" lon="121.3355855"><ele>843.23</ele></trkpt>
+<trkpt lat="24.7584336" lon="121.3356353"><ele>844.57</ele></trkpt>
+<trkpt lat="24.7585516" lon="121.3354814"><ele>845.21</ele></trkpt>
+<trkpt lat="24.7586562" lon="121.3353181"><ele>841.58</ele></trkpt>
+<trkpt lat="24.7585630" lon="121.3354881"><ele>836.35</ele></trkpt>
+<trkpt lat="24.7584613" lon="121.3356606"><ele>841.09</ele></trkpt>
+<trkpt lat="24.7585625" lon="121.3354889"><ele>840.97</ele></trkpt>
+<trkpt lat="24.7586696" lon="121.3356506"><ele>836.94</ele></trkpt>
+<trkpt lat="24.7586576" lon="121.3354529"><ele>832.98</ele></trkpt>
+<trkpt lat="24.7588401" lon="121.3354503"><ele>824.81</ele></trkpt>
+<trkpt lat="24.7590165" lon="121.3354107"><ele>819.20</ele></trkpt>
+<trkpt lat="24.7589032" lon="121.3355691"><ele>823.83</ele></trkpt>
+<trkpt lat="24.7590754" lon="121.3356514"><ele>815.02</ele></trkpt>
+<trkpt lat="24.7592556" lon="121.3356786"><ele>798.56</ele></trkpt>
+<trkpt lat="24.7594368" lon="121.3357156"><ele>793.92</ele></trkpt>
+<trkpt lat="24.7596172" lon="121.3356522"><ele>783.84</ele></trkpt>
+<trkpt lat="24.7597853" lon="121.3355743"><ele>779.45</ele></trkpt>
+<trkpt lat="24.7599395" lon="121.3354708"><ele>760.48</ele></trkpt>
+<trkpt lat="24.7601195" lon="121.3354790"><ele>752.05</ele></trkpt>
+<trkpt lat="24.7602994" lon="121.3354975"><ele>746.69</ele></trkpt>
+<trkpt lat="24.7604771" lon="121.3355530"><ele>738.26</ele></trkpt>
+<trkpt lat="24.7605874" lon="121.3357112"><ele>727.05</ele></trkpt>
+<trkpt lat="24.7607385" lon="121.3358310"><ele>720.78</ele></trkpt>
+<trkpt lat="24.7608891" lon="121.3359676"><ele>713.03</ele></trkpt>
+<trkpt lat="24.7610488" lon="121.3360624"><ele>705.67</ele></trkpt>
+<trkpt lat="24.7611685" lon="121.3359125"><ele>696.18</ele></trkpt>
+<trkpt lat="24.7612306" lon="121.3357264"><ele>688.14</ele></trkpt>
+<trkpt lat="24.7612721" lon="121.3355315"><ele>679.47</ele></trkpt>
+<trkpt lat="24.7612638" lon="121.3353320"><ele>665.71</ele></trkpt>
+<trkpt lat="24.7612603" lon="121.3351328"><ele>658.77</ele></trkpt>
+<trkpt lat="24.7614485" lon="121.3351204"><ele>659.47</ele></trkpt>
+<trkpt lat="24.7616299" lon="121.3351648"><ele>650.56</ele></trkpt>
+<trkpt lat="24.7617599" lon="121.3350115"><ele>645.54</ele></trkpt>
+<trkpt lat="24.7619443" lon="121.3350272"><ele>646.56</ele></trkpt>
+<trkpt lat="24.7621224" lon="121.3351067"><ele>647.28</ele></trkpt>
+<trkpt lat="24.7622997" lon="121.3351936"><ele>644.96</ele></trkpt>
+<trkpt lat="24.7624695" lon="121.3352681"><ele>642.95</ele></trkpt>
+<trkpt lat="24.7626251" lon="121.3353780"><ele>636.27</ele></trkpt>
+<trkpt lat="24.7627571" lon="121.3355414"><ele>637.39</ele></trkpt>
+<trkpt lat="24.7629159" lon="121.3356366"><ele>632.85</ele></trkpt>
+<trkpt lat="24.7630635" lon="121.3357712"><ele>629.93</ele></trkpt>
+<trkpt lat="24.7632378" lon="121.3358491"><ele>630.65</ele></trkpt>
+<trkpt lat="24.7634133" lon="121.3357842"><ele>630.67</ele></trkpt>
+<trkpt lat="24.7635788" lon="121.3358838"><ele>629.40</ele></trkpt>
+<trkpt lat="24.7636324" lon="121.3360748"><ele>634.63</ele></trkpt>
+<trkpt lat="24.7635701" lon="121.3362728"><ele>637.42</ele></trkpt>
+<trkpt lat="24.7634499" lon="121.3364335"><ele>638.59</ele></trkpt>
+<trkpt lat="24.7634938" lon="121.3366268"><ele>639.13</ele></trkpt>
+<trkpt lat="24.7634094" lon="121.3368055"><ele>640.21</ele></trkpt>
+<trkpt lat="24.7635103" lon="121.3369730"><ele>639.57</ele></trkpt>
+<trkpt lat="24.7636780" lon="121.3370567"><ele>641.19</ele></trkpt>
+<trkpt lat="24.7637261" lon="121.3372493"><ele>650.13</ele></trkpt>
+<trkpt lat="24.7636263" lon="121.3374194"><ele>656.09</ele></trkpt>
+<trkpt lat="24.7636687" lon="121.3376158"><ele>657.11</ele></trkpt>
+<trkpt lat="24.7636903" lon="121.3378196"><ele>657.62</ele></trkpt>
+<trkpt lat="24.7636990" lon="121.3380181"><ele>660.23</ele></trkpt>
+<trkpt lat="24.7636611" lon="121.3382142"><ele>667.26</ele></trkpt>
+<trkpt lat="24.7635991" lon="121.3384099"><ele>669.51</ele></trkpt>
+<trkpt lat="24.7637127" lon="121.3385782"><ele>668.32</ele></trkpt>
+<trkpt lat="24.7638002" lon="121.3387570"><ele>669.13</ele></trkpt>
+<trkpt lat="24.7637787" lon="121.3389553"><ele>674.65</ele></trkpt>
+<trkpt lat="24.7638342" lon="121.3391517"><ele>675.23</ele></trkpt>
+<trkpt lat="24.7639055" lon="121.3393508"><ele>683.51</ele></trkpt>
+<trkpt lat="24.7640568" lon="121.3394838"><ele>677.65</ele></trkpt>
+<trkpt lat="24.7642502" lon="121.3394907"><ele>682.22</ele></trkpt>
+<trkpt lat="24.7643963" lon="121.3393645"><ele>683.01</ele></trkpt>
+<trkpt lat="24.7644999" lon="121.3391746"><ele>683.12</ele></trkpt>
+<trkpt lat="24.7646546" lon="121.3390410"><ele>682.90</ele></trkpt>
+<trkpt lat="24.7648302" lon="121.3391126"><ele>689.55</ele></trkpt>
+<trkpt lat="24.7649873" lon="121.3392275"><ele>686.34</ele></trkpt>
+<trkpt lat="24.7650359" lon="121.3394193"><ele>684.55</ele></trkpt>
+<trkpt lat="24.7650976" lon="121.3396214"><ele>680.34</ele></trkpt>
+<trkpt lat="24.7651136" lon="121.3398206"><ele>679.55</ele></trkpt>
+<trkpt lat="24.7651731" lon="121.3400165"><ele>674.71</ele></trkpt>
+<trkpt lat="24.7652399" lon="121.3402050"><ele>674.38</ele></trkpt>
+<trkpt lat="24.7650742" lon="121.3402892"><ele>677.96</ele></trkpt>
+<trkpt lat="24.7649228" lon="121.3401730"><ele>673.86</ele></trkpt>
+<trkpt lat="24.7647372" lon="121.3401740"><ele>668.64</ele></trkpt>
+<trkpt lat="24.7646484" lon="121.3403500"><ele>662.46</ele></trkpt>
+<trkpt lat="24.7644920" lon="121.3404594"><ele>658.54</ele></trkpt>
+<trkpt lat="24.7642995" lon="121.3404618"><ele>661.03</ele></trkpt>
+<trkpt lat="24.7641194" lon="121.3405340"><ele>661.13</ele></trkpt>
+<trkpt lat="24.7639808" lon="121.3406792"><ele>662.31</ele></trkpt>
+<trkpt lat="24.7638063" lon="121.3407609"><ele>662.34</ele></trkpt>
+<trkpt lat="24.7636675" lon="121.3408963"><ele>655.99</ele></trkpt>
+<trkpt lat="24.7635166" lon="121.3410086"><ele>647.39</ele></trkpt>
+<trkpt lat="24.7633370" lon="121.3410892"><ele>649.44</ele></trkpt>
+<trkpt lat="24.7631525" lon="121.3411050"><ele>645.32</ele></trkpt>
+<trkpt lat="24.7629672" lon="121.3411159"><ele>654.55</ele></trkpt>
+<trkpt lat="24.7629019" lon="121.3413022"><ele>653.13</ele></trkpt>
+<trkpt lat="24.7629431" lon="121.3415040"><ele>642.39</ele></trkpt>
+<trkpt lat="24.7630442" lon="121.3416754"><ele>644.11</ele></trkpt>
+<trkpt lat="24.7629573" lon="121.3414981"><ele>652.76</ele></trkpt>
+<trkpt lat="24.7629164" lon="121.3412982"><ele>652.52</ele></trkpt>
+</trkseg>
+</trk>
+</gpx>`;
+
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(fullGpxString, "text/xml");
+
+    // 1. 解析軌跡點 (trkpt)
+    const trackPoints = xmlDoc.getElementsByTagName("trkpt");
+    const routeCoordinates = [];
+    const elevationData = [];
+    const chartLabels = [];
+
+    for (let i = 0; i < trackPoints.length; i++) {
+        const pt = trackPoints[i];
+        const lat = parseFloat(pt.getAttribute("lat"));
+        const lon = parseFloat(pt.getAttribute("lon"));
+        const eleNode = pt.getElementsByTagName("ele")[0];
+        const ele = eleNode ? parseFloat(eleNode.textContent) : 0;
+
+        routeCoordinates.push([lat, lon]);
+        elevationData.push(ele);
+        chartLabels.push(i);
+    }
+
+    // 2. 初始化地圖（使用台灣通用電子地圖 EMAP）
+    const map = L.map('map').setView(routeCoordinates[0], 14);
+
+    L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}', {
+        attribution: '&copy; <a href="https://maps.nlsc.gov.tw/" target="_blank">內政部國土測繪中心</a>',
+        maxZoom: 20
+    }).addTo(map);
+
+    const polyline = L.polyline(routeCoordinates, {
+        color: '#e53e3e',
+        weight: 4,
+        opacity: 0.85
+    }).addTo(map);
+
+    map.fitBounds(polyline.getBounds());
+
+    // 3. 解析航點 (wpt) 並繪製標記與填充時間表格
+    const waypoints = xmlDoc.getElementsByTagName("wpt");
+    const tableBody = document.getElementById("waypoints-table-body");
+
+    for (let i = 0; i < waypoints.length; i++) {
+        const wpt = waypoints[i];
+        const lat = parseFloat(wpt.getAttribute("lat"));
+        const lon = parseFloat(wpt.getAttribute("lon"));
+        
+        const nameNode = wpt.getElementsByTagName("name")[0];
+        const eleNode = wpt.getElementsByTagName("ele")[0];
+        const timeNode = wpt.getElementsByTagName("time")[0];
+        const typeNode = wpt.getElementsByTagName("type")[0];
+
+        const rawName = nameNode ? nameNode.textContent.trim() : "";
+        const ele = eleNode ? parseFloat(eleNode.textContent).toFixed(1) : "-";
+        const type = typeNode ? typeNode.textContent.trim() : "標記點";
+        const timeStr = timeNode ? timeNode.textContent.trim() : "";
+
+        // 轉換為在地時間格式 (UTC+8)
+        let formattedTime = "-";
+        if (timeStr) {
+            const dateObj = new Date(timeStr);
+            formattedTime = dateObj.toLocaleString("zh-TW", {
+                timeZone: "Asia/Taipei",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false
+            });
+        }
+
+        const displayName = rawName || `${type} ${i + 1}`;
+
+        // 地圖加上圓形標記
+        const markerColor = type === "起點" ? "#38a169" : (type === "終點" ? "#e53e3e" : "#3182ce");
+        L.circleMarker([lat, lon], {
+            radius: 6,
+            fillColor: markerColor,
+            color: "#fff",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.9
+        }).addTo(map).bindPopup(`<b>${displayName}</b><br>類型: ${type}<br>時間: ${formattedTime}<br>海拔: ${ele} m`);
+
+        // 產生表格項目
+        let badgeClass = "badge-point";
+        if (type === "起點") badgeClass = "badge-start";
+        if (type === "終點") badgeClass = "badge-end";
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td><span class="badge ${badgeClass}">${type}</span></td>
+            <td><strong>${displayName}</strong></td>
+            <td>${formattedTime}</td>
+            <td>${ele} m</td>
+            <td>${lat.toFixed(5)}, ${lon.toFixed(5)}</td>
+        `;
+        tableBody.appendChild(tr);
+    }
+
+    // 4. 初始化海拔剖面圖
+    const ctx = document.getElementById('elevationChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartLabels,
+            datasets: [{
+                label: '海拔高度 (公尺)',
+                data: elevationData,
+                borderColor: '#3182ce',
+                backgroundColor: 'rgba(49, 130, 206, 0.15)',
+                borderWidth: 2,
+                fill: true,
+                pointRadius: 0,
+                tension: 0.25
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    display: false
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: '海拔 (m)'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    callbacks: {
+                        title: () => null,
+                        label: function(context) {
+                            return `海拔: ${context.parsed.y} 公尺`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+</script>
+</body>
+</html>
